@@ -2,6 +2,14 @@
 use IO::Socket;
 use DBI;
 use DBD::Pg;
+use DBD::ODBC;
+use Net::IP;
+
+close(STDIN);
+close(STDOUT);
+close(STDERR);
+exit if (fork());
+exit if (fork());
 
 # Variables and Constants
 my $MAXLEN = 1524;
@@ -13,10 +21,14 @@ my $daily=0;          # Create daily log files (date in file name)
 my $perfacility=0;    # Each facility gets its own log file
 mkdir("log");         # Create log directory if it does not exist yet
 
-my $dbhost = 'localhost';
+#my $dbhost = 'localhost';
+#my $dbname = 'haproxy_performance';
+
 my $dbname = 'haproxy_performance';
 
-my $dbh = DBI->connect("dbi:Pg:dbname=$dbname",'','',{AutoCommit => 0});
+#my $dbh = DBI->connect("dbi:Pg:dbname=$dbname",'','',{AutoCommit => 0});
+my $dbh = DBI->connect('dbi:ODBC:SqlDev',"haproxyrequestlog","haproxyrequestlog",{AutoCommit => 0});
+
 
 my $sth = $dbh->prepare(
 	"INSERT INTO perflog(
@@ -53,12 +65,16 @@ sub logsys{
   if ($daily){$facdiff.=sprintf "-%04d-%02d-%02d", $year, $mon, $mday;}
   if ($perhost){mkdir("log\\$hn"); $fn=$hn . "\\syslog".$facdiff.".log"; $pf=$hn ."\\";}else{$fn="syslog".$facdiff.".log";}
   my $p=sprintf "[%02d.%02d.%04d, %02d:%02d:%02d, %1d, %1d] %s\n", $mday, $mon, $year, $hour, $min, $sec, $fac, $sev, $msg;
-#  print "$msg\n";
+  print "$msg\n";
   if ($msg =~ /([\d:]*) haproxy\[(\d*)\]: (\b(?:\d{1,3}\.){3}\d{1,3}\b):(\d*) \[(.*)\] (.*) (.*)\/(.*) (\d*)\/(\d*)\/(\d*)\/(\d*)\/(\d*) (\d*) (\d*) (.*) (.*) (.*) (\d*)\/(\d*)\/(\d*)\/(\d*)\/(\d*) (\d*)\/(\d*) \{(.*)\} \"(.*) (.*) (.*)\"/ ) {
+	  my $ip = new Net::IP("$3");
+	  my $intip = $ip->intip();
+	  my $date = join(" ",split(':',$5,2));
+	  
 	  $sth->bind_param(1,$2);
-	  $sth->bind_param(2,$3);
+	  $sth->bind_param(2,$intip->bstr());
 	  $sth->bind_param(3,$4);
-	  $sth->bind_param(4,$5);
+	  $sth->bind_param(4,$date);
 	  $sth->bind_param(5,$6);
 	  $sth->bind_param(6,$7);
 	  $sth->bind_param(7,$8);
@@ -86,5 +102,4 @@ sub logsys{
 	  print STDERR "\nDROPPED: $msg\n\n";
   }
 
-#  if (open(WW,">>log\\$fn")){print WW $p;close(WW);}
 }
