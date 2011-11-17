@@ -1,15 +1,37 @@
 #!/usr/bin/perl
+use POSIX qw/setuid setsid/;
 use IO::Socket;
 use DBI;
 use DBD::Pg;
 use DBD::ODBC;
+use Sys::Syslog qw( :DEFAULT setlogsock);
 use Net::IP;
+use Getopt::Long;
 
-close(STDIN);
-close(STDOUT);
-close(STDERR);
-exit if (fork());
-exit if (fork());
+my $help;
+my $debug;
+my $foreground;
+
+
+$result = GetOptions(
+	'h'=>\$help,
+	'f'=>\$foreground,
+	'd'=>\$debug);
+
+if($help){&help(); exit;};
+
+logit('info','HAProxy-Syslog Daemon starting up');
+
+setuid scalar getpwnam 'nobody' or die $!;
+
+local $|=1;
+if(!$foreground) {
+	close(STDIN);
+	close(STDOUT);
+	close(STDERR);
+	exit if (fork());
+	exit if (fork());
+}
 
 # Variables and Constants
 my $MAXLEN = 1524;
@@ -20,9 +42,6 @@ my $perhost=0;        # Each source gets its own log file
 my $daily=0;          # Create daily log files (date in file name)
 my $perfacility=0;    # Each facility gets its own log file
 mkdir("log");         # Create log directory if it does not exist yet
-
-#my $dbhost = 'localhost';
-#my $dbname = 'haproxy_performance';
 
 my $dbname = 'haproxy_performance';
 
@@ -65,7 +84,6 @@ sub logsys{
   if ($daily){$facdiff.=sprintf "-%04d-%02d-%02d", $year, $mon, $mday;}
   if ($perhost){mkdir("log\\$hn"); $fn=$hn . "\\syslog".$facdiff.".log"; $pf=$hn ."\\";}else{$fn="syslog".$facdiff.".log";}
   my $p=sprintf "[%02d.%02d.%04d, %02d:%02d:%02d, %1d, %1d] %s\n", $mday, $mon, $year, $hour, $min, $sec, $fac, $sev, $msg;
-  print "$msg\n";
   if ($msg =~ /([\d:]*) haproxy\[(\d*)\]: (\b(?:\d{1,3}\.){3}\d{1,3}\b):(\d*) \[(.*)\] (.*) (.*)\/(.*) (\d*)\/(\d*)\/(\d*)\/(\d*)\/(\d*) (\d*) (\d*) (.*) (.*) (.*) (\d*)\/(\d*)\/(\d*)\/(\d*)\/(\d*) (\d*)\/(\d*) \{(.*)\} \"(.*) (.*) (.*)\"/ ) {
 	  my $ip = new Net::IP("$3");
 	  my $intip = $ip->intip();
@@ -96,10 +114,34 @@ sub logsys{
 	  $sth->bind_param(23,$27);
 	  $sth->bind_param(24,$28);
 	  $sth->bind_param(25,$29);
-	  my $rv = $sth->execute();
+	  logit('info',"Parsing: $msg") if $debug;
+	  my $rv = $sth->execute() || warn logit('warn', "Error inserting to db: $! $msg");
 	  $dbh->commit();
   } else {
+	  logit('info',"HaproxySyslog: DROPPED: $msg");
 	  print STDERR "\nDROPPED: $msg\n\n";
   }
 
+}
+sub logit {
+        my ($priority, $msg) = @_; 
+        return 0 unless ($priority =~ /info|err|debug/);
+	print STDOUT $msg."\n" if $foreground;
+        setlogsock('unix');
+        # $programname is assumed to be a global.  Also log the PID
+        # and to CONSole if there's a problem.  Use facility 'user'.
+        openlog($programname, 'pid,cons', 'user');
+        syslog($priority, $msg);
+        closelog();
+        return 1;
+}
+
+sub help {
+	print <<EOF
+HaProxySyslog: Logging HaProxy stats to a database for interesting and fun stats
+Usage: haproxysyslog.pl [-fdh]
+ -h 	Show this help text
+ -d	Enable debug logging
+ -f	Don't fork, run in terminal
+EOF
 }
