@@ -22,10 +22,10 @@ if($help){&help(); exit;};
 
 logit('info','HAProxy-Syslog Daemon starting up');
 
-setuid scalar getpwnam 'nobody' or die $!;
 
 local $|=1;
 if(!$foreground) {
+	setuid scalar getpwnam 'nobody' or die $!;
 	close(STDIN);
 	close(STDOUT);
 	close(STDERR);
@@ -46,7 +46,7 @@ mkdir("log");         # Create log directory if it does not exist yet
 my $dbname = 'haproxy_performance';
 
 #my $dbh = DBI->connect("dbi:Pg:dbname=$dbname",'','',{AutoCommit => 0});
-my $dbh = DBI->connect('dbi:ODBC:SqlDev',"haproxyrequestlog","haproxyrequestlog",{AutoCommit => 0});
+my $dbh = DBI->connect('dbi:ODBC:SqlProd',"haproxyrequestlog","haproxyrequestlog",{AutoCommit => 0}) || die "Couldn't connect to db";
 
 
 my $sth = $dbh->prepare(
