@@ -29,8 +29,7 @@ if(!$foreground) {
 	close(STDIN);
 	close(STDOUT);
 	close(STDERR);
-	exit if (fork());
-	exit if (fork());
+	exit(0) if (fork());
 }
 
 # Variables and Constants
