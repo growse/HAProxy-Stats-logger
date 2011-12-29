@@ -43,9 +43,11 @@ my $perfacility=0;    # Each facility gets its own log file
 mkdir("log");         # Create log directory if it does not exist yet
 
 my $dbname = 'haproxy_performance';
+my $dbuname = 'haproxyrequestlog';
+my $dbpwd = 'haproxyrequestlog';
+my $dbdsn = 'dbi:ODBC:SqlProd';
 
-#my $dbh = DBI->connect("dbi:Pg:dbname=$dbname",'','',{AutoCommit => 0});
-my $dbh = DBI->connect('dbi:ODBC:SqlProd',"haproxyrequestlog","haproxyrequestlog",{AutoCommit => 0}) || die "Couldn't connect to db";
+my $dbh = DBI->connect($dbdsn,$dbuname,$dbpwd,{AutoCommit => 0}) || die "Couldn't connect to db";
 
 
 my $sth = $dbh->prepare(
@@ -114,8 +116,14 @@ sub logsys{
 	  $sth->bind_param(24,$28);
 	  $sth->bind_param(25,$29);
 	  logit('info',"Parsing: $msg") if $debug;
-	  my $rv = $sth->execute() || warn logit('warn', "Error inserting to db: $! $msg");
-	  $dbh->commit();
+	  my $rv = $sth->execute() || warn logit('warning', "Error inserting to db: $! $msg");
+	  if ($msg=~/connection reset/i) {
+		logit('err','Re-connecting to database after 30 seconds');
+		sleep 30;
+		my $dbh = DBI->connect($dbdsn,$dbuname,$dbpwd,{AutoCommit => 0});
+	  } else {
+		  $dbh->commit()|| warn logit('err',"Error committing db transaction: $! $msg");
+	  }
   } else {
 	  logit('info',"HaproxySyslog: DROPPED: $msg");
 	  print STDERR "\nDROPPED: $msg\n\n";
@@ -126,7 +134,6 @@ sub logit {
         my ($priority, $msg) = @_; 
         return 0 unless ($priority =~ /info|err|debug/);
 	print STDOUT $msg."\n" if $foreground;
-        setlogsock('unix');
         # $programname is assumed to be a global.  Also log the PID
         # and to CONSole if there's a problem.  Use facility 'user'.
         openlog($programname, 'pid,cons', 'user');
