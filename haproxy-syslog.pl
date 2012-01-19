@@ -7,11 +7,11 @@ use DBD::ODBC;
 use Sys::Syslog qw( :DEFAULT setlogsock);
 use Net::IP;
 use Getopt::Long;
+use POSIX qw(strftime);
 
 my $help;
 my $debug;
 my $foreground;
-
 
 $result = GetOptions(
 	'h'=>\$help,
@@ -116,13 +116,25 @@ sub logsys{
 	  $sth->bind_param(24,$28);
 	  $sth->bind_param(25,$29);
 	  logit('info',"Parsing: $msg") if $debug;
-	  my $rv = $sth->execute() || warn logit('warning', "Error inserting to db: $! $msg");
-	  if ($msg=~/connection reset/i) {
+	  my $rv = $sth->execute() || logit('warning', "Error inserting to db: $! $msg");
+	  if ($rv eq 0) {
 		logit('err','Re-connecting to database after 30 seconds');
-		sleep 30;
-		my $dbh = DBI->connect($dbdsn,$dbuname,$dbpwd,{AutoCommit => 0});
+		$dbh = undef;
+		while (!$dbh) {
+			sleep 30;
+			$dbh = DBI->connect($dbdsn,$dbuname,$dbpwd,{AutoCommit => 0});
+			print "ERRORSTRING: ".$DBI::errstr."\n";
+			if ($DBI::errstr ne "") {$dbh=undef;}
+		}
+		$sth = $dbh->prepare(
+			"INSERT INTO perflog(
+			pid, client_ip, client_port, datestamp, frontend_name, backend_name, 
+			server_name, tq, tw, tc, tr, tt, status_code, bytes_read, actconn, 
+			feconn, beconn, srv_conn, retries, srv_queue, backend_queue, host_header,
+			http_verb, http_uri, http_version)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
 	  } else {
-		  $dbh->commit()|| warn logit('err',"Error committing db transaction: $! $msg");
+		  $dbh->commit() || logit('err',"Error committing db transaction: $! $msg");
 	  }
   } else {
 	  logit('info',"HaproxySyslog: DROPPED: $msg");
@@ -133,7 +145,7 @@ sub logsys{
 sub logit {
         my ($priority, $msg) = @_; 
         return 0 unless ($priority =~ /info|err|debug/);
-	print STDOUT $msg."\n" if $foreground;
+	print STDOUT strftime("%a, %d %b %Y %H:%M:%S", localtime(time()))." ".$msg."\n" if $foreground;
         # $programname is assumed to be a global.  Also log the PID
         # and to CONSole if there's a problem.  Use facility 'user'.
         openlog($programname, 'pid,cons', 'user');
