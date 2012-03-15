@@ -43,8 +43,8 @@ my $perfacility=0;    # Each facility gets its own log file
 mkdir("log");         # Create log directory if it does not exist yet
 
 my $dbname = 'haproxy_performance';
-my $dbuname = 'haproxyrequestlog';
-my $dbpwd = 'haproxyrequestlog';
+my $dbuname = 'haproxy_inserter';
+my $dbpwd = 'lsdu89bo3';
 my $dbdsn = 'dbi:ODBC:SqlProd';
 
 my $dbh = DBI->connect($dbdsn,$dbuname,$dbpwd,{AutoCommit => 0}) || die "Couldn't connect to db";
@@ -120,11 +120,13 @@ sub logsys{
 	  if ($rv eq 0) {
 		logit('err','Re-connecting to database after 30 seconds');
 		$dbh = undef;
+		$errcount=0;
 		while (!$dbh) {
 			sleep 30;
 			$dbh = DBI->connect($dbdsn,$dbuname,$dbpwd,{AutoCommit => 0});
 			print "ERRORSTRING: ".$DBI::errstr."\n";
-			if ($DBI::errstr ne "") {$dbh=undef;}
+			if ($DBI::errstr ne "") {$dbh=undef; $errcount+=1;}
+			if ($errcount>10) { exit; }
 		}
 		$sth = $dbh->prepare(
 			"INSERT INTO perflog(
