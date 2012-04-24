@@ -15,7 +15,6 @@ my $foreground;
 
 $result = GetOptions(
 	'h'=>\$help,
-	'f'=>\$foreground,
 	'd'=>\$debug);
 
 if($help){&help(); exit;};
@@ -24,13 +23,6 @@ logit('info','HAProxy-Syslog Daemon starting up');
 
 
 local $|=1;
-if(!$foreground) {
-	setuid scalar getpwnam 'nobody' or die $!;
-	close(STDIN);
-	close(STDOUT);
-	close(STDERR);
-	exit(0) if (fork());
-}
 
 # Variables and Constants
 my $MAXLEN = 1524;
